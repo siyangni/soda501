@@ -1,0 +1,154 @@
+---
+title: "SoDA501 Data Clean"
+output: html_notebook
+---
+
+Call Data
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+
+#Replace with own file locations
+
+data_2017 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2017/ICPSR_37182/DS0001/DS0001.tsv")
+data_2018 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2018/ICPSR_37416/DS0001/DS0001.tsv")
+data_2019 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2019/ICPSR_37841/DS0001/DS0001.tsv")
+data_2020 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2020/ICPSR_38156/DS0001/DS0001.tsv")
+data_2021 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2021/ICPSR_38503/DS0001/DS0001.tsv")
+data_2022 <- readr::read_tsv("C:/Users/ndhem/OneDrive - The Pennsylvania State University/soda501_group_project/data/original/2022/ICPSR_38882/DS0001/DS0001.tsv")
+
+data_2017 <- as.data.frame(data_2017)
+data_2018 <- as.data.frame(data_2018)
+data_2019 <- as.data.frame(data_2019)
+data_2020 <- as.data.frame(data_2020)
+data_2021 <- as.data.frame(data_2021)
+data_2022 <- as.data.frame(data_2022)
+
+```
+
+Bind Data Together
+
+```{r}
+
+#Dependent variable
+colnames(data_2017)[colnames(data_2017) == "V2568"] <- "V2581"
+colnames(data_2018)[colnames(data_2018) == "V2568"] <- "V2581"
+colnames(data_2021)[colnames(data_2021) == "V7782"] <- "V2581"
+colnames(data_2022)[colnames(data_2022) == "V7782"] <- "V2581"
+
+#Find common columns
+common_cols <- Reduce(intersect, lapply(list(names(data_2017), names(data_2018), names(data_2019), names(data_2020), names(data_2021), names(data_2022)), as.vector))
+
+#Select common columns
+data_2017x <- data_2017 %>% select(all_of(common_cols))
+data_2018x <- data_2018 %>% select(all_of(common_cols))
+data_2019x <- data_2019 %>% select(all_of(common_cols))
+data_2020x <- data_2020 %>% select(all_of(common_cols))
+data_2021x <- data_2021 %>% select(all_of(common_cols))
+data_2022x <- data_2022 %>% select(all_of(common_cols))
+
+#Bind all data (This should work fine)
+merged_data <- rbind(data_2017x, data_2018x, data_2019x, data_2020x, data_2021x, data_2022x)
+
+```
+
+Remove Unimportant Features
+
+```{r}
+
+#Rename dependent variable "Nicotine12"
+
+colnames(merged_data)[colnames(merged_data) == "V2581"] <- "Nicotine12"
+
+#Replace 3-7 with 2
+
+merged_data$Nicotine12[which(merged_data$Nicotine12 == 3)] <- 2
+merged_data$Nicotine12[which(merged_data$Nicotine12 == 4)] <- 2
+merged_data$Nicotine12[which(merged_data$Nicotine12 == 5)] <- 2
+merged_data$Nicotine12[which(merged_data$Nicotine12 == 6)] <- 2
+merged_data$Nicotine12[which(merged_data$Nicotine12 == 7)] <- 2
+
+#Dropping Correlated Substance Use Variables
+
+merged_data <- merged_data[, -c(1:4)]
+
+merged_data <- subset(merged_data, select = -c(V2102, V2547, V2548, V2549, V2564, V2576, V2105, V2106, V2107, V2108, V2020, V2021, V2022, V2009, V2116, V2117, V2003, V2927, V2119, V2120, V2122, V2123, V2033, V2034, V2305, V2125, V2126, V2460, V2461, V2043, V2044, V2128, V2129, V2030, V2031, V2909, V2307, V2134, V2135, V2912, V2137, V2138, V2140, V2141, V2143, V2144, V2907, V2908, V2920, V2146, V2147, V2494, V2495, V2918, V2919, V2566, V2101D, V2102D, V2104D, V2105D, V2106D, V2115D, V2116D, V2117D, V2118D, V2119D, V2120D, V2121D, V2122D, V2123D, V2127D, V2128D, V2129D, V2133D, V2134D, V2135D, V2136D, V2137D, V2138D, V2145D, V2146D, V2147D, V2142D, V2143D, V2144D))
+
+#write.csv(merged_data, "merged_data.csv")
+
+```
+
+Impute Data
+
+```{r}
+
+#Replace -9 with NA
+
+merged_data[merged_data == -9] <- NA
+
+#Impute with Mice
+
+library(mice)
+
+imputed_data <- mice(merged_data, m = 5, method = "pmm", seed = 1337)
+imputed_data <- complete(imputed_data)
+
+imputed_data$Nicotine12 <- as.factor(imputed_data$Nicotine12)
+
+#write.csv(imputed_data, "imputed_data.csv")
+
+```
+
+Calculate Correlation Matrix
+
+```{r}
+
+#imputed_data <- read.csv("imputed_data.csv")
+
+library(caret)
+library(mlbench)
+
+correlation <- cor(imputed_data)
+
+highlyCorrelated <- findCorrelation(correlation, cutoff = 0.5)
+print(highlyCorrelated)
+
+cleaned_data <- imputed_data[, -highlyCorrelated]
+
+#write.csv(cleaned_data, "cleaned_data.csv")
+
+```
+
+Boruta Algorithm
+
+```{r}
+
+#This takes forever.
+
+library(Boruta)
+
+boruta <- Boruta(Nicotine12 ~ ., data = imputed_data)
+
+```
+
+Feature Importance with Caret
+
+```{r}
+
+#This also takes forever
+
+# prepare training scheme
+control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+# train the model
+model <- train(Nicotine12 ~ ., data = imputed_data, method = "lvq", preProcess = "scale", trControl = control)
+# estimate variable importance
+importance <- varImp(model, scale = FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+
+```
+
