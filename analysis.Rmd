@@ -1,0 +1,634 @@
+---
+title: "SoDA501 Data Clean"
+output: html_notebook
+---
+
+# Data Analysis
+
+## Data Preperation
+
+Load the dataset
+
+```{r, eval = FALSE}
+# Load the dplyr package (using pacman)
+library(pacman)
+p_load(tidyverse)
+
+# Read the CSV file into a data frame
+df <- read.csv("/storage/home/szn5432/work/soda501/preprocessed/merged_data.csv")
+
+# Replace all -9 values with NA in the entire dataset
+df[df == -9] <- NA
+# Assign -9 to missing value, 2 to 1, 1 to 0
+df <- mutate(df, Nicotine12 = recode(Nicotine12, `2` = 1, `1` = 0, `-9` = NA_real_))
+
+# Check the dataset structure to confirm the changes
+str(df)
+# View the first few rows of the data frame
+head(df)
+```
+
+Spilit the data into training (90%) and testing (10%)
+
+```{r, eval = FALSE}
+# Set seed for reproducibility
+set.seed(123)
+
+# Create training, validation, and test sets using slice
+n <- nrow(df)
+df_shuffled <- df %>% sample_n(n)  # Shuffle the entire dataframe
+
+# 9-1 Split
+train_end <- floor(0.9 * n)
+train_set <- df_shuffled %>% slice(1:train_end)
+test_set <- df_shuffled %>% slice((train_end + 1):n)
+
+# Check dimensions
+dim(train_set)
+dim(test_set)
+
+# Check class
+str(train_set)
+sapply(train_set, class)
+```
+
+
+Imputed the training set for ease of some analysis
+
+```{r, eval = FALSE}
+# Install and load imputation packages
+p_load(caret)
+
+# Impute the missing values for training set
+set.seed(325)
+pp <- preProcess(train_set, 
+           method = c("knnImpute","center","scale","BoxCox"),
+           na.remove = TRUE,
+           k = 5,
+           knnSummary = mean,
+           verbose = TRUE,
+       )
+
+predict(pp, train_set_imputed)
+
+# Check the number of complete rows after imputation
+sum(!complete.cases(train_set_imputed))
+
+
+# Impute the missing value for testing set
+set.seed(325)
+pp <- preProcess(test_set, 
+           method = c("knnImpute","center","scale","BoxCox"),
+           na.remove = TRUE,
+           k = 5,
+           knnSummary = mean,
+           verbose = TRUE,
+       )
+
+predict(pp, test_set_imputed)
+
+# Check the number of complete rows after imputation
+sum(!complete.cases(test_set_imputed))
+```
+
+
+Check correlation matrix
+
+```{r}
+# Install required packages
+p_load(reshape2)
+
+# Compute the correlation matrix
+corr_matrix <- cor(train_set_imputed, use="complete.obs")
+
+# Convert the correlation matrix to a long format dataframe
+corr_df <- melt(corr_matrix)
+
+# Define the threshold
+threshold <- 0.6
+
+# Filter for pairs with correlation above the threshold
+high_corr_pairs <- corr_df[abs(corr_df$value) > threshold & corr_df$Var1 != corr_df$Var2, ]
+
+# Display the pairs
+print(high_corr_pairs)
+
+
+# Create the heatmap
+# p <- ggplot(corr_df, aes(Var1, Var2, fill=value)) +
+    # geom_tile() + # Creates the tiles
+     #scale_fill_gradient2(low="blue", high="red", mid="white", midpoint=0, 
+                         # limits=c(-1, 1)) + # Color scale
+     #theme_minimal() + # Minimal theme
+     #labs(title="Correlation Matrix Heatmap",
+          #x="", y="")
+
+# Save the plot to a file
+# ggsave("correlation_heatmap.png", plot=p)
+```
+
+- The out put indicates V2124 (taken cocaine in lifetime) are 0.91 correlated with V2042 (using cocaine lifetime in another form). **Remove V2042**
+
+- V2173 (Self-rated school ability) and V2174 (self-rated comparative intelligence are highly correlated) is 0.70 correlated. **Remove V2174**
+
+- V2191 (Work hours per week) and V2192 (Money get from work per week) are 0.73 correlated. **Remove V2192**
+
+- V2166 (political preference) and V2167 (Political belief) are 0.60 correlated. **Remove V2166**
+
+- V2169 (attend religious serives) and V2170 (importance of religion in life) are 0.638 correlated. **Remove V2169**
+
+- V2181 (Intention of Serving in the armed force after high school) and V2186 (Intention of serving in the armed force) are 0.618 correlated. **Remove V2186**
+
+- V2182 (two year college after high school) and V2187 (intention of doing two year college) are 0.58 correlated. **Remove V2187**
+
+- V2104 (life time drink) and V2115 (life time MJ) are 0.57 correlated. Consider keeping both.
+
+- V2183 (how likely to attend four-year college) and V2188 (intention of attend four-year college) are 0.56 correlated.  **Remove V2188**
+
+- V2184 (how likely to attend graduate school) and V2189 (intention of attend graduate school) are 0.56 correlated.  **Remove V2189**
+
+- V2180 (how likely to attend vocational school) and V2185 (intention of attend vocational school) are 0.548 correlated.  **Remove V2185**
+
+- V2183 (how likely to attend four-year college) and V2184 (how likely to attend graduate school) are 0.53 correlated. Consider keeping both 
+
+- V2200 (tickets/warnings after illegal drugs) and V2204 (Accidents after illegal drugs) are 0.68. **Removing V2204**
+
+- V2118 (LSD lifetime) and V2121 (PSYD Lifetime) are 0.69. **Removing V2121**
+
+- V2139 (Heroin Lifetime) and V2029 (Methamphetamines lifetime) are 0.61. **Removing V2029**
+
+- V2124 (Cocaine lifetime) and V2459 (Crack lifetime) are 0.60. **Removing V2459**
+
+```{r}
+# Create a new dataframe by removing specified columns
+train_set_cleaned <- subset(train_set_imputed, select = -c(V2042, V2174, V2192, V2166, V2169, V2186, V2187, V2188, V2189, V2185, V2204, V2121, V2029, V2459))
+
+# Create a new dataframe by removing specified columns
+test_set_cleaned <- subset(test_set_imputed, select = -c(V2042, V2174, V2192, V2166, V2169, V2186, V2187, V2188, V2189, V2185, V2204, V2121, V2029, V2459))
+```
+
+
+Check the correlation again
+
+```{r}
+# Compute the correlation matrix
+corr_matrix <- cor(train_set_cleaned, use="complete.obs")
+
+# Convert the correlation matrix to a long format dataframe
+corr_df <- melt(corr_matrix)
+
+# Define the threshold
+threshold <- 0.6
+
+# Filter for pairs with correlation above the threshold
+high_corr_pairs <- corr_df[abs(corr_df$value) > threshold & corr_df$Var1 != corr_df$Var2, ]
+
+# Display the pairs
+print(high_corr_pairs)
+```
+
+
+```{r}
+# Change the label to factor
+train_set_cleaned$Nicotine12 <- as.factor(train_set_cleaned$Nicotine12)
+test_set_cleaned$Nicotine12 <- as.factor(test_set_cleaned$Nicotine12)
+
+# levels(df$Nicotine12) <- c("Negative", "Positive")
+```
+
+
+## Logistic Regression
+
+```{r}
+# Setting up 10 fold cross-validation
+train_control <- trainControl(
+  method = "cv",   # Use cross-validation
+  number = 10      # Number of folds in cross-validation
+)
+
+
+# Train the model
+model_log <- train(Nicotine12 ~ . - X, data = train_set_cleaned, method = "glm", family = binomial(), trControl = train_control)
+
+# Examine the model
+print(model)
+summary(model)
+```
+
+```{r}
+# Predict on the validation set
+predictions <- predict(model_log, newdata = test_set_cleaned)
+
+# Calculate the confusion matrix
+conf_matrix <- confusionMatrix(predictions, test_set_cleaned$Nicotine12)
+
+# Print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy on the test set is:", accuracy))
+
+# Print additional metrics
+print(paste("Precision:",  conf_matrix$byClass['Precision']))
+print(paste("Recall (Sensitivity):", conf_matrix$byClass['Recall']))
+print(paste("F1 Score:", conf_matrix$byClass['F1']))
+```
+
+
+## Regularized Logistic Regression
+
+```{r}
+# Load the caret package
+p_load(caret)
+
+# Remove rows with any NA values
+# train_set_wx <- train_set[ , -which(names(train_set) == "X")]
+# train_set_cleaned <- na.omit(train_set_wx)
+
+# Change the label to factor
+train_set_cleaned$Nicotine12 <- as.factor(train_set_cleaned$Nicotine12)
+
+
+# Define the control parameters for model training
+train_control <- trainControl(method="cv", number=10) # 10-fold cross-validation
+
+
+# Define a grid of hyperparameters to search over
+tune_grid <- expand.grid(
+    alpha = c(0, 0.5, 1), # Ridge, Elastic Net, Lasso
+    lambda = 10^seq(-3, 3, length=100)
+)
+
+# Train the model with caret
+model <- train(
+    Nicotine12 ~ . - X,
+    data= train_set_cleaned,
+    method="glmnet",
+    trControl=train_control,
+    tuneGrid=tune_grid,
+    family="binomial"
+)
+
+# View the best model
+print(model)
+
+# To view model coefficients:
+coef(model$finalModel, s=model$bestTune$lambda)
+```
+
+
+
+```{r}
+# Predict on the validation set
+predictions <- predict(model, newdata = test_set_cleaned)
+
+# Calculate the confusion matrix
+conf_matrix <- confusionMatrix(predictions, test_set_cleaned$Nicotine12)
+
+# Print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy on the test set is:", accuracy))
+
+# Print additional metrics
+print(paste("Precision:",  conf_matrix$byClass['Precision']))
+print(paste("Recall (Sensitivity):", conf_matrix$byClass['Recall']))
+print(paste("F1 Score:", conf_matrix$byClass['F1']))
+```
+
+```{r}
+#Feature Importance
+perm_importance <- varImp(model, scale = FALSE)
+
+# Print the sorted importance scores
+print(perm_importance)
+```
+
+
+
+## Decision Tree Algorithm
+
+We begin with the basic decision tree algorithm, without any ensembles, this is to set a baseline model performance for us to build prediction models.
+
+First, setting up the training control
+
+```{r}
+# Load the caret package
+p_load(caret)
+p_load(rpart)
+
+# Set up cross-validation
+train_control <- trainControl(
+  method = "cv",       # k-fold cross-validation
+  number = 10,         # 5 folds to begin with
+  verboseIter = TRUE,  # print training iterations
+  classProbs = TRUE, # Classfication task
+  savePredictions = "final",  # save predictions for each fold
+  summaryFunction = twoClassSummary  # Use AUC and Accuracy
+
+)
+
+```
+
+Define the tunegrid. 
+
+```{r}
+# Define the tuning grid
+tune_grid <- expand.grid(
+  cp = seq(0.01, 0.1, by=0.01)
+)
+```
+
+
+```{r}
+# Prepare the training and testing set
+levels(train_set_cleaned$Nicotine12) <- c("Negative", "Positive")
+levels(test_set_cleaned$Nicotine12) <- c("Negative", "Positive")
+```
+
+Model Training
+
+```{r}
+## Registering parallel computing
+p_load(doParallel)
+# registering 8 cores
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+
+# Fit the model
+# Train the decision tree model
+model_cart <- train(
+  Nicotine12 ~ .-X,  # Predicting Nicotine12 using all other variables
+  data = train_set_cleaned,
+  method = "rpart",  # Using rpart method for decision trees
+  metric = "ROC",  # Metric to evaluate and select the best model
+  maximize = TRUE,   # Specify to maximize the evaluation metric
+  trControl = train_control,
+  tuneGrid = tune_grid,
+  na.action=na.pass # Allow model training to continue with missing values
+)
+# Quit parallel computing instance
+stopCluster(cl)
+
+# Print model performance
+print(model)
+```
+
+
+Testing model performance on the test set
+
+```{r}
+# Predict on the validation set
+predictions <- predict(model_cart, newdata = test_set_cleaned)
+
+# Calculate the confusion matrix
+conf_matrix <- confusionMatrix(predictions, test_set_cleaned$Nicotine12)
+
+
+# Print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy on the test set is:", accuracy))
+
+# Print additional metrics
+print(paste("Precision:",  conf_matrix$byClass['Precision']))
+print(paste("Recall (Sensitivity):", conf_matrix$byClass['Recall']))
+print(paste("F1 Score:", conf_matrix$byClass['F1']))
+```
+
+Check the Variable Importance
+
+```{r}
+
+#Feature Importance
+perm_importance <- varImp(model_cart, scale = FALSE)
+
+# Print the sorted importance scores
+print(perm_importance)
+```
+
+
+## Random Forest
+
+```{r}
+p_load(randomForest)
+p_load(doParallel)
+p_load(caret)
+
+train_control <- trainControl(
+  method = "cv",  # Cross-validation
+  number = 10,    # Number of folds in the cross-validation
+  savePredictions = "final",
+  classProbs = TRUE,  # To calculate class probabilities (useful for ROC curve analysis)
+  summaryFunction = twoClassSummary,  # For binary classification performance metrics
+  allowParallel = TRUE
+)
+
+# Define a custom tune grid
+tune_grid <- expand.grid(
+  .mtry = c(2, sqrt(ncol(train_set_cleaned) - 1)),  # Typical choices for 'mtry'
+  .ntree = c(100)  # Fewer trees for faster computation
+)
+
+# registering 8 cores
+# registering 8 cores
+cl <- makePSOCKcluster(detectCores() - 1)
+registerDoParallel(cl)
+
+# Training the model
+model_rf <- train(
+  Nicotine12 ~ .-X,  # Predicting Nicotine12 using all other variables
+  data = train_set_cleaned,  # predict Species using all other variables
+  method = "rf",
+  trControl = train_control,
+  metric = "ROC",
+  tunegrid = tune_grid  # Number of different tuning parameters to try
+)
+
+# Quit parallel computing instance
+stopCluster(cl)
+registerDoSEQ()
+
+# Check the model 
+print(model_rf)
+```
+
+
+```{r}
+# Predict on the validation set
+predictions <- predict(model_rf, newdata = test_set_cleaned)
+
+# Calculate the confusion matrix
+conf_matrix <- confusionMatrix(predictions_factor, reference_factor)
+
+
+# Print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy on the test set is:", accuracy))
+
+# Print additional metrics
+print(paste("Precision:",  conf_matrix$byClass['Precision']))
+print(paste("Recall (Sensitivity):", conf_matrix$byClass['Recall']))
+print(paste("F1 Score:", conf_matrix$byClass['F1']))
+```
+```{r}
+#Feature Importance
+perm_importance <- varImp(model_rf, scale = FALSE)
+
+# Print the sorted importance scores
+print(perm_importance)
+```
+
+
+
+## Stochastic Gradeint Boosting (XGBoost)
+
+```{r}
+# Load the gbm package
+p_load(xgboost)
+
+# Set up train control
+train_control <- trainControl(
+  method = "cv",  # Repeated cross-validation
+  number = 5,            # Number of folds
+  savePredictions = "final",
+  classProbs = TRUE,      # Needed if ROC will be used as a metric
+  summaryFunction = twoClassSummary,  # Required for ROC metric in binary classification
+  verboseIter = TRUE,
+  allowParallel = TRUE
+)
+```
+
+
+
+```{r}
+# Training the model
+xgbGrid <- expand.grid(
+  nrounds = c(150, 200),  
+  max_depth = c(5, 10, 20), 
+  eta = c(0.01, 0.05),  
+  gamma = c(0,2),  
+  colsample_bytree = c(0.75, 1),  
+  min_child_weight = c(1, 2),  
+  subsample = c(0.5, 1)
+  )
+
+
+## Registering parallel computing
+p_load(doParallel)
+# registering 24-1 cores
+cl <- makePSOCKcluster(23)
+registerDoParallel(cl)
+
+model_xgboost <- train(
+  Nicotine12 ~ .-X,  # Class is the outcome variable in the twoClassSim dataset
+  data = train_set_cleaned,
+  method = "xgbTree",
+  trControl = train_control,
+  tuneGrid = xgbGrid,
+  metric = "ROC"
+)
+
+
+# Quit parallel computing instance
+stopCluster(cl)
+registerDoSEQ()
+
+# Display the results
+print(model_xgboost)
+
+# Display the best tuning parameters
+print(model_xgboost$bestTune)
+
+```
+
+Testing model performance on the test set
+
+```{r}
+# Predict on the validation set
+predictions <- predict(model_xgboost, newdata = test_set_cleaned)
+
+# Calculate the confusion matrix
+conf_matrix <- confusionMatrix(predictions, test_set_cleaned$Nicotine12)
+
+# Print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy on the test set is:", accuracy))
+
+# Print additional metrics
+print(paste("Precision:",  conf_matrix$byClass['Precision']))
+print(paste("Recall (Sensitivity):", conf_matrix$byClass['Recall']))
+print(paste("F1 Score:", conf_matrix$byClass['F1']))
+```
+
+Check the Variable Importance
+
+```{r}
+#Feature Importance
+perm_importance <- varImp(model, scale = FALSE)
+
+# Print the sorted importance scores
+print(perm_importance)
+```
+
+
+## Boruta Feature Selection
+
+Quick Version: 
+
+```{r}
+p_load(Boruta)
+p_load(rFerns)
+
+set.seed(888)
+
+# registering 24-1 cores
+cl <- makePSOCKcluster(23)
+registerDoParallel(cl)
+
+model_boruta_fast <- Boruta(Nicotine12 ~ .-X, data = train_set_cleaned, doTrace=2, getImp=getImpFerns)
+
+# Quit parallel computing instance
+stopCluster(cl)
+registerDoSEQ()
+
+print(model_boruta_fast)
+
+getSelectedAttributes(model_boruta_fast, withTentative = F)
+
+attStats(model_boruta_fast)
+```
+
+
+
+Full Version
+
+```{r}
+p_load(Boruta)
+
+set.seed(888)
+
+# registering 24-1 cores
+cl <- makePSOCKcluster(23)
+registerDoParallel(cl)
+
+
+Boruta(Nicotine12 ~ .-X, data = train_set_cleaned, doTrace = 2)
+
+
+ # Quit parallel computing instance
+stopCluster(cl)
+registerDoSEQ()
+
+print(model_boruta)
+
+getSelectedAttributes(model_boruta, withTentative = F)
+
+attStats(model_boruta)
+```
+
+
+## Exporting data
+
+```{r}
+write.csv(train_set_cleaned, "/storage/work/szn5432/soda501/preprocessed/train_set_cleaned", row.names = FALSE)
+write.csv(test_set_cleaned, "/storage/work/szn5432/soda501/preprocessed/test_set_cleaned", row.names = FALSE)
+```
+
+
